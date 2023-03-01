@@ -52,6 +52,7 @@ import {
     setRoomPriority,
     sendPacket,
     sendGroupSign,
+    getDisabledFeatures,
 } from './botAndStorage'
 import { download, downloadFileByMessageData, downloadImage } from './downloadManager'
 import openImage from './openImage'
@@ -97,7 +98,7 @@ const setClearRoomsBehavior = (behavior: 'AllUnpined' | '1WeekAgo' | '1DayAgo' |
     Menu.setApplicationMenu(initMenu)
 }
 
-const buildRoomMenu = (room: Room): Menu => {
+const buildRoomMenu = async (room: Room): Promise<Menu> => {
     const pinTitle = room.index ? '解除置顶' : '置顶'
     const updateRoomPriority = (lev: 1 | 2 | 3 | 4 | 5) => setRoomPriority(room.roomId, lev)
     const menu = Menu.buildFromTemplate([
@@ -617,12 +618,13 @@ const buildRoomMenu = (room: Room): Menu => {
             }),
         )
     }
-    menu.append(
-        new MenuItem({
-            label: '网页应用',
-            submenu: webApps,
-        }),
-    )
+    ;(await getDisabledFeatures()).includes('WebApps') ||
+        menu.append(
+            new MenuItem({
+                label: '网页应用',
+                submenu: webApps,
+            }),
+        )
     menu.append(
         new MenuItem({
             label: '获取历史消息',
@@ -736,7 +738,7 @@ export const updateAppMenu = async () => {
             new MenuItem({
                 label: '锁定',
                 click: lockMainWindow,
-                accelerator: 'CommandOrControl+L'
+                accelerator: 'CommandOrControl+L',
             }),
             new MenuItem({
                 label: '最小化',
@@ -751,12 +753,12 @@ export const updateAppMenu = async () => {
                 label: '关闭窗口 (hidden)',
                 role: 'close',
                 visible: false,
-                accelerator: 'CommandOrControl+H'
+                accelerator: 'CommandOrControl+H',
             }),
             new MenuItem({
                 label: '退出',
                 click: exit,
-                accelerator: 'CommandOrControl+Q'
+                accelerator: 'CommandOrControl+Q',
             }),
         ],
         priority: new MenuItem({
@@ -792,6 +794,7 @@ export const updateAppMenu = async () => {
         options: [
             new MenuItem({
                 label: '在线状态',
+                visible: !(await getDisabledFeatures()).includes('OnlineStatus'),
                 submenu: [
                     {
                         type: 'radio',
@@ -1250,14 +1253,14 @@ export const updateAppMenu = async () => {
         menu.append(
             new MenuItem({
                 label: `${selectedRoom.roomName}(${Math.abs(selectedRoom.roomId)})`,
-                submenu: buildRoomMenu(selectedRoom),
+                submenu: await buildRoomMenu(selectedRoom),
             }),
         )
     }
     Menu.setApplicationMenu(menu)
 }
 ipcMain.on('popupRoomMenu', async (_, roomId: number) => {
-    buildRoomMenu(await getRoom(roomId)).popup({
+    ;(await buildRoomMenu(await getRoom(roomId))).popup({
         window: getMainWindow(),
     })
 })

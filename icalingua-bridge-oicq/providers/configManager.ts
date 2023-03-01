@@ -10,6 +10,7 @@ type Config = {
     port: number
     host: string
     unix?: string
+    onebot?: string
 }
 
 type UserConfig = {

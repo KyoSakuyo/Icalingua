@@ -154,9 +154,7 @@
             <transition name="vac-bounce">
                 <div v-if="lastUnreadAt" class="vac-icon-last-at-message" @click="scrollToLastAtMessage">
                     <transition name="vac-bounce">
-                        <div v-if="lastUnreadAt" class="vac-badge-counter vac-messages-count">
-                            @
-                        </div>
+                        <div v-if="lastUnreadAt" class="vac-badge-counter vac-messages-count">@</div>
                     </transition>
                     <slot name="scroll-icon">
                         <svg-icon name="dropdown" style="transform: rotate(180deg)" />
@@ -164,7 +162,11 @@
                 </div>
             </transition>
             <transition name="vac-bounce">
-                <div v-if="!lastUnreadAt && lastUnreadCount >= 10" class="vac-icon-last-message" @click="scrollToLastMessage">
+                <div
+                    v-if="!lastUnreadAt && lastUnreadCount >= 10"
+                    class="vac-icon-last-message"
+                    @click="scrollToLastMessage"
+                >
                     <transition name="vac-bounce">
                         <div v-if="!lastUnreadAt && lastUnreadCount" class="vac-badge-counter vac-messages-count">
                             {{ lastUnreadCount }}
@@ -903,6 +905,7 @@ export default {
                     }
                     if (msg.code) {
                         if (isJSON(msg.code)) {
+                            let jsonCode = msg.code
                             const jsonObj = JSON.parse(msg.code)
                             if (jsonObj.app === 'com.tencent.multimsg') {
                                 const extra = jsonObj.extra
@@ -915,9 +918,10 @@ export default {
                                         console.error(e)
                                     }
                                     if (resId && fileName) jsonObj.extra = `{"tsum":1,"filename":"${fileName}"}`
+                                    jsonCode = JSON.stringify(jsonObj)
                                 }
                             }
-                            singleMessage.message = [{ type: 'json', data: { data: msg.code } }]
+                            singleMessage.message = [{ type: 'json', data: { data: jsonCode } }]
                         } else {
                             singleMessage.message = [{ type: 'xml', data: { data: msg.code } }]
                         }

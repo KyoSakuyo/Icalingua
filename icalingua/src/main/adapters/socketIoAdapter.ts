@@ -39,10 +39,11 @@ import {
     tryToShowAllWindows,
 } from '../utils/windowManager'
 import ChatGroup from '@icalingua/types/ChatGroup'
+import SpecialFeature from '@icalingua/types/SpecialFeature'
 
 // 这是所对应服务端协议的版本号，如果协议有变动比如说调整了 API 才会更改。
 // 如果只是功能上的变动的话就不会改这个版本号，混用协议版本相同的服务端完全没有问题
-const EXCEPTED_PROTOCOL_VERSION = '2.3.6'
+const EXCEPTED_PROTOCOL_VERSION = '2.9.0'
 
 let socket: Socket
 let uin = 0
@@ -55,6 +56,7 @@ let rooms: Room[] = []
 let chatGroups: ChatGroup[] = []
 let loggedIn = false
 let account: LoginForm
+let disabledFeatures: SpecialFeature[]
 
 const attachSocketEvents = () => {
     socket.off('connect_error')
@@ -253,7 +255,8 @@ const attachSocketEvents = () => {
     socket.on('requestSetup', async (data: LoginForm) => {
         console.log('bridge 未登录')
         account = data
-        showLoginWindow(true)
+        const disabledFeatures = await adapter.getDisabledFeatures()
+        showLoginWindow(true, disabledFeatures.includes('IdLogin'))
     })
     socket.on('fatal', async (message: string) => {
         socket.off('connect_error')
@@ -632,6 +635,15 @@ const adapter: Adapter = {
     sendPacket(type: string, cmd: string, body: Object): Promise<Buffer> {
         return new Promise((resolve, reject) => {
             socket.emit('sendPacket', type, cmd, body, resolve)
+        })
+    },
+    getDisabledFeatures(): Promise<SpecialFeature[]> {
+        if (disabledFeatures) return Promise.resolve(disabledFeatures)
+        return new Promise((resolve, reject) => {
+            socket.emit('getDisabledFeatures', (features) => {
+                disabledFeatures = features
+                resolve(features)
+            })
         })
     },
 }

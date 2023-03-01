@@ -13,19 +13,33 @@
                 <h5>Version {{ ver }}</h5>
                 <h4 v-if="$route.query.bridge === 'true'">正在配置 Bridge 服务器</h4>
             </center>
-            <el-form-item prop="username">
+            <el-form-item prop="username" v-if="$route.query.disableIdLogin === 'false'">
                 <el-input type="text" placeholder="QQ ID" v-model.number="form.username" />
             </el-form-item>
-            <el-form-item prop="password" :style="{ marginBottom: '15px' }">
+            <el-form-item
+                prop="password"
+                :style="{ marginBottom: '15px' }"
+                v-if="$route.query.disableIdLogin === 'false'"
+            >
                 <el-input type="password" placeholder="Password" v-model="form.password" />
             </el-form-item>
-            <el-form-item prop="protocol" label="Protocol">
+            <el-form-item prop="protocol" label="Protocol" v-if="$route.query.disableIdLogin === 'false'">
                 <el-radio-group v-model="form.protocol" size="small">
                     <el-radio-button label="1">Android</el-radio-button>
                     <el-radio-button label="2">aPad</el-radio-button>
                     <el-radio-button label="3">Android Watch</el-radio-button>
                     <el-radio-button label="4">MacOS</el-radio-button>
                     <el-radio-button label="5">iPad</el-radio-button>
+                </el-radio-group>
+            </el-form-item>
+            <el-form-item label="Status" v-if="$route.query.disableIdLogin === 'false'">
+                <el-radio-group v-model="form.onlineStatus" size="small">
+                    <el-radio-button label="11">Online</el-radio-button>
+                    <el-radio-button label="31">Away From Keyboard</el-radio-button>
+                    <el-radio-button label="41">Hide</el-radio-button>
+                    <el-radio-button label="50">Busy</el-radio-button>
+                    <el-radio-button label="60">Q Me</el-radio-button>
+                    <el-radio-button label="70">Don't Disturb</el-radio-button>
                 </el-radio-group>
             </el-form-item>
             <el-form-item prop="autologin" class="nobottmar">
@@ -40,16 +54,6 @@
                     <el-option label="MySQL / MariaDB" value="mysql">MySQL / MariaDB</el-option>
                     <el-option label="PostgreSQL" value="pg">PostgreSQL</el-option>
                 </el-select>
-            </el-form-item>
-            <el-form-item label="Status">
-                <el-radio-group v-model="form.onlineStatus" size="small">
-                    <el-radio-button label="11">Online</el-radio-button>
-                    <el-radio-button label="31">Away From Keyboard</el-radio-button>
-                    <el-radio-button label="41">Hide</el-radio-button>
-                    <el-radio-button label="50">Busy</el-radio-button>
-                    <el-radio-button label="60">Q Me</el-radio-button>
-                    <el-radio-button label="70">Don't Disturb</el-radio-button>
-                </el-radio-group>
             </el-form-item>
             <el-form-item prop="connStr" v-show="form.storageType === 'mdb'">
                 <el-input
@@ -81,7 +85,7 @@
                     <span v-show="!form.password && $route.query.bridge !== 'true'">QR Code</span>
                     Login
                 </el-button>
-                <el-button type="warning" v-if="errmsg !== ''" v-on:click="cannotLogin"> 无法登录? </el-button>
+                <el-button type="warning" v-if="errmsg !== ''" v-on:click="cannotLogin"> 无法登录?</el-button>
             </el-form-item>
         </el-form>
         <QrcodeDrawer @login="onSubmit('loginForm')" />
@@ -102,12 +106,12 @@
                 @keydown.enter.native="submitSmsCode"
             />
             <center>
-                <el-button @click="submitSmsCode" type="primary" v-if="sendTime !== -1"> 提交 </el-button>
-                <el-button @click="sendSmsCode" v-if="sendTime === -1"> 发送验证码 </el-button>
+                <el-button @click="submitSmsCode" type="primary" v-if="sendTime !== -1"> 提交</el-button>
+                <el-button @click="sendSmsCode" v-if="sendTime === -1"> 发送验证码</el-button>
                 <el-button @click="sendSmsCode" v-if="sendTime !== -1" :disabled="sendTime !== 0">
                     重发 ({{ sendTime }}s)
                 </el-button>
-                <el-button v-if="verifyUrl" @click="QRCodeVerify"> 扫码验证 </el-button>
+                <el-button v-if="verifyUrl" @click="QRCodeVerify"> 扫码验证</el-button>
             </center>
         </el-drawer>
     </div>
@@ -160,7 +164,7 @@ export default {
     methods: {
         onSubmit(formName) {
             this.$refs[formName].validate(async (valid) => {
-                if (valid) {
+                if (valid || this.$route.query.disableIdLogin === 'true') {
                     this.disabled = true
                     if (this.form.password && !/^([a-f\d]{32}|[A-F\d]{32})$/.test(this.form.password))
                         this.form.password = md5(this.form.password)

@@ -7,3 +7,9 @@ dist
 .idea
 .vscode
 build
+.github
+*.md
+*.yaml
+*.yml
+*.json
+.husky

@@ -27,6 +27,7 @@ import {
     FriendRecallEventData,
     GroupAddEventData,
     GroupAdminEventData,
+    GroupInfo,
     GroupInviteEventData,
     GroupMessageEventData,
     GroupMuteEventData,
@@ -61,9 +62,10 @@ import createRoom from '../utils/createRoom'
 import formatDate from '../utils/formatDate'
 import getImageUrlByMd5 from '../utils/getImageUrlByMd5'
 import getSysInfo from '../utils/getSysInfo'
-import processMessage from '../utils/processMessage'
+import createProcessMessage from '../utils/processMessage'
 import sleep from '../utils/sleep'
 import ChatGroup from '@icalingua/types/ChatGroup'
+import SpecialFeature from '@icalingua/types/SpecialFeature'
 
 let bot: Client
 let storage: StorageProvider
@@ -72,7 +74,6 @@ let loginError: boolean = false
 let _sendPrivateMsg: {
     (user_id: number, message: Sendable, auto_escape?: boolean): Promise<Ret<{ message_id: string }>>
 }
-export let loggedIn = false
 
 let lastReceivedMessageInfo = {
     timestamp: 0,
@@ -749,8 +750,8 @@ const eventHandlers = {
 }
 const loginHandlers = {
     async onSucceed() {
-        if (!loggedIn) {
-            loggedIn = true
+        if (!adapter.loggedIn) {
+            adapter.loggedIn = true
             await initStorage()
             attachEventHandler()
             setInterval(adapter.sendOnlineData, 1000 * 60)
@@ -902,6 +903,8 @@ const attachLoginHandler = () => {
 //endregion
 
 const adapter = {
+    loggedIn: false,
+    disabledFeatures: [] as SpecialFeature[],
     async getMsgNewURL(id: string, resolve): Promise<string> {
         const history = await adapter.getMsg(id)
         if (history.error) {
@@ -933,7 +936,7 @@ const adapter = {
         resolve('error')
         return
     },
-    getGroup(gin: number, resolve) {
+    getGroup(gin: number, resolve: (group: GroupInfo) => any) {
         resolve(bot.gl.get(gin))
     },
     setGroupKick(gin: number, uin: number): any {
@@ -1315,7 +1318,7 @@ const adapter = {
             })
             _sendPrivateMsg = bot.sendPrivateMsg
             bot.sendPrivateMsg = async (user_id: number, message: MessageElem[] | string, auto_escape?: boolean) => {
-                if (typeof message === 'string') message = [{type: 'text', data: {text: message}}]
+                if (typeof message === 'string') message = [{ type: 'text', data: { text: message } }]
                 let data = await _sendPrivateMsg.call(bot, user_id, message, auto_escape)
                 if (user_id === bot.uin || user_id === 3636666661) return data
 
@@ -1376,7 +1379,7 @@ const adapter = {
     async getGroups(resolve) {
         const groups = bot.gl.values()
         let iterG = groups.next()
-        const groupsAll = []
+        const groupsAll = [] as Array<GroupInfo & { sc: string }>
         while (!iterG.done) {
             const f = { ...iterG.value }
             f.sc = (f.group_name + f.group_id).toUpperCase()
@@ -1766,5 +1769,6 @@ const adapter = {
     },
 }
 
+const processMessage = createProcessMessage(adapter)
+
 export default adapter
-export const getBot = () => bot

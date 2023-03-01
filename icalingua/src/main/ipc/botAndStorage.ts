@@ -64,6 +64,7 @@ export const {
     randomDevice,
     sendPacket,
     sendGroupSign,
+    getDisabledFeatures,
 } = adapter
 export const fetchLatestHistory = (roomId: number) => {
     let buffer: Buffer
@@ -90,6 +91,7 @@ export const getCookies = async (domain: CookiesDomain): Promise<Cookies> => {
     return ret
 }
 
+ipcMain.on('getDisabledFeatures', () => getDisabledFeatures())
 ipcMain.on('createBot', (event, form: LoginForm) => createBot(form))
 ipcMain.on('randomDevice', (event, username: number) => {
     randomDevice(username)
