@@ -87,6 +87,8 @@ import {
 } from '../utils/windowManager'
 import ChatGroup from '@icalingua/types/ChatGroup'
 import SpecialFeature from '@icalingua/types/SpecialFeature'
+import { LoginErrorEventData } from 'oicq-icalingua-plus-plus'
+import { SliderEventData } from 'oicq-icalingua-plus-plus'
 
 let bot: Client
 let storage: StorageProvider
@@ -408,7 +410,7 @@ const eventHandlers = {
                 senderId: data.operator_id,
                 timestamp: formatDate('hh:mm:ss'),
                 date: formatDate('yyyy/MM/dd'),
-                _id: data.time,
+                _id: `poke-${data.time * 1000}-${data.group_id}-${data.user_id}`,
                 system: true,
                 time: data.time * 1000,
                 files: [],
@@ -437,7 +439,7 @@ const eventHandlers = {
                 senderId: data.user_id,
                 timestamp: formatDate('hh:mm:ss'),
                 date: formatDate('yyyy/MM/dd'),
-                _id: data.time,
+                _id: `sign-${data.time * 1000}-${data.group_id}-${data.user_id}`,
                 system: true,
                 time: data.time * 1000,
                 files: [],
@@ -457,7 +459,7 @@ const eventHandlers = {
         if (await storage.isChatIgnored(roomId)) return
         const message: Message = {
             _id: `${now.getTime()}-${groupId}-${senderId}`,
-            content: `${data.nickname} 加入了本群`,
+            content: `${data.nickname} (${data.user_id}) 加入了本群`,
             username: data.nickname,
             senderId,
             time: data.time * 1000,
@@ -501,9 +503,11 @@ const eventHandlers = {
             content: data.dismiss
                 ? '群解散了'
                 : (data.member ? (data.member.card ? data.member.card : data.member.nickname) : data.user_id) +
-                  (data.operator_id === data.user_id || !operator
-                      ? ' 离开了本群'
-                      : ` 被 ${operator.card ? operator.card : operator.nickname} 踢了`),
+                  (data.operator_id === data.user_id
+                      ? ` (${data.user_id}) 离开了本群`
+                      : ` (${data.user_id}) 被 ${
+                            operator ? (operator.card ? operator.card : operator.nickname) : data.operator_id
+                        } (${data.operator_id}) 踢了`),
             username: data.member
                 ? data.member.card
                     ? data.member.card
@@ -874,7 +878,7 @@ const eventHandlers = {
     },
 }
 const loginHandlers = {
-    slider(data) {
+    slider(data: SliderEventData) {
         console.log(data)
         const veriWin = newIcalinguaWindow({
             height: 500,
@@ -893,10 +897,10 @@ const loginHandlers = {
                 'Mozilla/5.0 (Linux; Android 7.1.1; MIUI ONEPLUS/A5000_23_17; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/77.0.3865.120 MQQBrowser/6.2 TBS/045426 Mobile Safari/537.36 V1_AND_SQ_8.3.9_0_TIM_D QQ/3.1.1.2900 NetType/WIFI WebP/0.3.0 Pixel/720 StatusBarHeight/36 SimpleUISwitch/0 QQTheme/1015712',
         })
     },
-    onErr(data) {
+    onErr(data: LoginErrorEventData) {
         console.log(data)
         showLoginWindow()
-        sendToLoginWindow('error', data.message)
+        sendToLoginWindow('error', data.message + ` (${data.code})`)
         loginError = true
     },
     async onSucceed() {
@@ -1957,14 +1961,14 @@ const adapter: OicqAdapter = {
         if (roomId === ui.getSelectedRoomId())
             storage.fetchMessages(roomId, 0, currentLoadedMessagesCount + 20).then(ui.setMessages)
         if (done) {
-            ui.messageSuccess(`已拉取 ${messages.length} 条消息`)
+            ui.messageSuccess(`${roomId} 已拉取 ${messages.length} 条消息`)
             ui.clearHistoryCount()
         } else {
-            ui.message(`已拉取 ${messages.length} 条消息，正在后台继续拉取`)
+            ui.message(`${roomId} 已拉取 ${messages.length} 条消息，正在后台继续拉取`)
             {
                 const { messages } = await fetchLoop()
                 await storage.addMessages(roomId, messages)
-                ui.messageSuccess(`已拉取 ${messages.length} 条消息`)
+                ui.messageSuccess(`${roomId} 已拉取 ${messages.length} 条消息`)
                 ui.clearHistoryCount()
             }
         }
