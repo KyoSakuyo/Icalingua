@@ -18,6 +18,8 @@ import ui from './ui'
 import OnlineStatusType from '@icalingua/types/OnlineStatusType'
 import { setOnlineStatus, updateAppMenu } from '../ipc/menuManager'
 import { getMainWindow, isAppLocked, lockMainWindow, tryToShowMainWindow } from './windowManager'
+import openImage from '../ipc/openImage'
+import removeGroupNameEmotes from '../../utils/removeGroupNameEmotes'
 
 let tray: Tray
 
@@ -61,9 +63,13 @@ export const updateTrayMenu = async () => {
     menu.append(new MenuItem({ type: 'separator' }))
     if (unreadRooms.length) {
         for (const unreadRoom of unreadRooms) {
+            const roomName =
+                unreadRoom.roomId < 0 && getConfig().removeGroupNameEmotes
+                    ? removeGroupNameEmotes(unreadRoom.roomName)
+                    : unreadRoom.roomName
             menu.append(
                 new MenuItem({
-                    label: `${unreadRoom.roomName} (${unreadRoom.unreadCount})`,
+                    label: `${roomName} (${unreadRoom.unreadCount})`,
                     click: () =>
                         tryToShowMainWindow(() => {
                             ui.chroom(unreadRoom.roomId)
@@ -93,40 +99,25 @@ export const updateTrayMenu = async () => {
     }
     menu.append(
         new MenuItem({
-            label: '通知优先级',
+            label: '通知设置',
             submenu: [
                 {
-                    type: 'radio',
-                    label: '1',
-                    checked: getConfig().priority === 1,
-                    click: () => setPriority(1),
-                },
-                {
-                    type: 'radio',
-                    label: '2',
-                    checked: getConfig().priority === 2,
-                    click: () => setPriority(2),
-                },
-                {
-                    type: 'radio',
-                    label: '3',
-                    checked: getConfig().priority === 3,
-                    click: () => setPriority(3),
-                },
-                {
-                    type: 'radio',
-                    label: '4',
-                    checked: getConfig().priority === 4,
-                    click: () => setPriority(4),
-                },
-                {
-                    type: 'radio',
-                    label: '5',
-                    checked: getConfig().priority === 5,
-                    click: () => setPriority(5),
-                },
-                {
-                    type: 'separator',
+                    label: '通知优先级',
+                    submenu: [
+                        ...([1, 2, 3, 4, 5] as const).map((e) => ({
+                            type: 'radio' as const,
+                            label: `${e}`,
+                            checked: getConfig().priority === e,
+                            click: () => setPriority(e),
+                        })),
+                        {
+                            type: 'separator',
+                        },
+                        {
+                            label: '帮助',
+                            click: () => openImage(path.join(getStaticPath(), 'notification.webp')),
+                        },
+                    ],
                 },
                 {
                     type: 'checkbox',
@@ -134,6 +125,18 @@ export const updateTrayMenu = async () => {
                     checked: getConfig().disableNotification,
                     click: (item) => {
                         getConfig().disableNotification = item.checked
+                        updateAppMenu()
+                        updateTrayMenu()
+                        saveConfigFile()
+                    },
+                },
+                {
+                    type: 'checkbox',
+                    label: '禁用全体通知',
+                    checked: getConfig().disableAtAll,
+                    visible: !getConfig().disableNotification,
+                    click: (item) => {
+                        getConfig().disableAtAll = item.checked
                         updateAppMenu()
                         updateTrayMenu()
                         saveConfigFile()
@@ -253,13 +256,25 @@ let currentIconUnread = false
 export const updateTrayIcon = async (force = false) => {
     let p: Electron.NativeImage
     const unread = await getUnreadCount()
-    const title = ui.getSelectedRoomName() ? ui.getSelectedRoomName() + ' — Icalingua++' : 'Icalingua++'
+    let selectedRoomId = ui.getSelectedRoomId()
+    let selectedRoomName = ui.getSelectedRoomName()
+    if (selectedRoomId < 0 && getConfig().removeGroupNameEmotes) {
+        selectedRoomName = removeGroupNameEmotes(selectedRoomName)
+    }
+    const title = selectedRoomName ? selectedRoomName + ' — Icalingua++' : 'Icalingua++'
     const shouldUpdateIcon = currentIconUnread !== unread > 0
     currentIconUnread = unread > 0
     if (unread) {
         p = getTrayIconColor() ? darknewmsgIcon : newmsgIcon
         const newMsgRoom = await getFirstUnreadRoom()
-        const extra = newMsgRoom ? ' : ' + newMsgRoom.roomName : ''
+        let extra = ''
+        if (newMsgRoom) {
+            let newMsgRoomName = newMsgRoom.roomName
+            if (newMsgRoom.roomId < 0 && getConfig().removeGroupNameEmotes) {
+                newMsgRoomName = removeGroupNameEmotes(newMsgRoomName)
+            }
+            extra = ' : ' + newMsgRoomName
+        }
         getMainWindow().title = `(${unread}${extra}) ${title}`
     } else {
         p = getTrayIconColor() ? darkIcon : lightIcon

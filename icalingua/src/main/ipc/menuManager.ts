@@ -56,7 +56,9 @@ import {
 } from './botAndStorage'
 import { download, downloadFileByMessageData, downloadImage } from './downloadManager'
 import openImage from './openImage'
-import { updateTrayMenu } from '../utils/trayManager'
+import { updateTrayIcon, updateTrayMenu } from '../utils/trayManager'
+import removeGroupNameEmotes from '../../utils/removeGroupNameEmotes'
+import sleep from '../../utils/sleep'
 
 const requireFunc = eval('require')
 const pb = requireFunc(path.join(getStaticPath(), 'pb.js'))
@@ -147,7 +149,14 @@ const buildRoomMenu = async (room: Room): Promise<Menu> => {
         },
         {
             label: '屏蔽消息',
-            click: () => ui.confirmIgnoreChat({ id: room.roomId, name: room.roomName }),
+            click: () =>
+                ui.confirmIgnoreChat({
+                    id: room.roomId,
+                    name:
+                        room.roomId < 0 && getConfig().removeGroupNameEmotes
+                            ? removeGroupNameEmotes(room.roomName)
+                            : room.roomName,
+                }),
         },
         {
             label: '复制名称',
@@ -350,16 +359,19 @@ const buildRoomMenu = async (room: Room): Promise<Menu> => {
                         })
                     }
                     win.webContents.setWindowOpenHandler((details) => {
-                        console.log(details.url)
                         const parsedUrl = new URL(details.url)
                         if (parsedUrl.hostname === 'qungz.photo.store.qq.com') openImage(details.url)
-                        else if (parsedUrl.hostname === 'download.photo.qq.com')
+                        else if (parsedUrl.hostname === 'download.photo.qq.com') {
+                            const roomName = getConfig().removeGroupNameEmotes
+                                ? removeGroupNameEmotes(room.roomName)
+                                : room.roomName
                             download(
                                 details.url,
-                                `${room.roomName}(${-room.roomId})的群相册${new Date().getTime()}.zip`,
+                                `${roomName}(${-room.roomId})的群相册${new Date().getTime()}.zip`,
                                 undefined,
                                 true,
                             )
+                        }
                         return { action: 'deny' }
                     })
                     await win.loadURL('https://h5.qzone.qq.com/groupphoto/album?inqq=1&groupId=' + -room.roomId)
@@ -439,7 +451,11 @@ const buildRoomMenu = async (room: Room): Promise<Menu> => {
                             '#/groupNickEdit/' +
                             -room.roomId +
                             '/' +
-                            querystring.escape(room.roomName) +
+                            querystring.escape(
+                                getConfig().removeGroupNameEmotes
+                                    ? removeGroupNameEmotes(room.roomName)
+                                    : room.roomName,
+                            ) +
                             '/' +
                             querystring.escape(memberInfo.card || memberInfo.nickname),
                     )
@@ -520,6 +536,18 @@ const buildRoomMenu = async (room: Room): Promise<Menu> => {
                 label: '导出群成员',
                 click() {
                     exportGroupMembers(-room.roomId)
+                },
+            }),
+        )
+        menu.append(
+            new MenuItem({
+                label: '匿名发送群消息',
+                type: 'checkbox',
+                checked: getConfig().anonymous === true,
+                visible: getConfig().sendRawMessage === false,
+                click: (menuItem) => {
+                    getConfig().anonymous = menuItem.checked
+                    saveConfigFile()
                 },
             }),
         )
@@ -762,20 +790,25 @@ export const updateAppMenu = async () => {
             }),
         ],
         priority: new MenuItem({
-            label: '通知优先级',
+            label: '通知设置',
             submenu: [
-                ...([1, 2, 3, 4, 5] as const).map((e) => ({
-                    type: 'radio' as const,
-                    label: `${e}`,
-                    checked: getConfig().priority === e,
-                    click: () => setPriority(e),
-                })),
                 {
-                    type: 'separator',
-                },
-                {
-                    label: '帮助',
-                    click: () => openImage(path.join(getStaticPath(), 'notification.webp')),
+                    label: '通知优先级',
+                    submenu: [
+                        ...([1, 2, 3, 4, 5] as const).map((e) => ({
+                            type: 'radio' as const,
+                            label: `${e}`,
+                            checked: getConfig().priority === e,
+                            click: () => setPriority(e),
+                        })),
+                        {
+                            type: 'separator',
+                        },
+                        {
+                            label: '帮助',
+                            click: () => openImage(path.join(getStaticPath(), 'notification.webp')),
+                        },
+                    ],
                 },
                 {
                     type: 'checkbox',
@@ -783,6 +816,18 @@ export const updateAppMenu = async () => {
                     checked: getConfig().disableNotification,
                     click: (item) => {
                         getConfig().disableNotification = item.checked
+                        updateAppMenu()
+                        updateTrayMenu()
+                        saveConfigFile()
+                    },
+                },
+                {
+                    type: 'checkbox',
+                    label: '禁用全体通知',
+                    checked: getConfig().disableAtAll,
+                    visible: !getConfig().disableNotification,
+                    click: (item) => {
+                        getConfig().disableAtAll = item.checked
                         updateAppMenu()
                         updateTrayMenu()
                         saveConfigFile()
@@ -1029,6 +1074,18 @@ export const updateAppMenu = async () => {
                             ui.useSinglePanel(menuItem.checked)
                         },
                     },
+                    {
+                        label: '移除群名里的表情',
+                        type: 'checkbox',
+                        checked: getConfig().removeGroupNameEmotes,
+                        click: (menuItem) => {
+                            getConfig().removeGroupNameEmotes = menuItem.checked
+                            saveConfigFile()
+                            updateAppMenu()
+                            updateTrayIcon()
+                            ui.setRemoveGroupNameEmotes(menuItem.checked)
+                        },
+                    },
                 ],
             }),
             new MenuItem({
@@ -1042,21 +1099,8 @@ export const updateAppMenu = async () => {
                         visible: !version.isProduction && (versionClickTimes >= 3 || getConfig().debugmode === true),
                         click: (menuItem) => {
                             getConfig().debugmode = menuItem.checked
-                            if (!menuItem.checked) {
-                                getConfig().anonymous = false
-                            }
                             saveConfigFile()
                             updateAppMenu()
-                        },
-                    },
-                    {
-                        label: '以匿名方式发送群消息',
-                        type: 'checkbox',
-                        checked: getConfig().anonymous === true,
-                        visible: getConfig().debugmode === true && getConfig().sendRawMessage === false,
-                        click: (menuItem) => {
-                            getConfig().anonymous = menuItem.checked
-                            saveConfigFile()
                         },
                     },
                     {
@@ -1250,9 +1294,13 @@ export const updateAppMenu = async () => {
     }
     const selectedRoom = await getSelectedRoom()
     if (selectedRoom) {
+        const roomName =
+            selectedRoom.roomId < 0 && getConfig().removeGroupNameEmotes
+                ? removeGroupNameEmotes(selectedRoom.roomName)
+                : selectedRoom.roomName
         menu.append(
             new MenuItem({
-                label: `${selectedRoom.roomName}(${Math.abs(selectedRoom.roomId)})`,
+                label: `${roomName}(${Math.abs(selectedRoom.roomId)})`,
                 submenu: await buildRoomMenu(selectedRoom),
             }),
         )
@@ -1837,8 +1885,25 @@ ipcMain.on('popupStickerMenu', () => {
         },
     ]).popup({ window: getMainWindow() })
 })
-ipcMain.on('popupStickerItemMenu', (_, itemName: string) => {
+ipcMain.on('popupStickerItemMenu', (_, itemName: string, itemList?: Array<string>, pathName?: string) => {
+    if (pathName && itemList) {
+        itemList = itemList.map((item) => pathName + item)
+    }
     const menu: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = []
+    menu.push({
+        label: '以图片方式发送',
+        type: 'normal',
+        click() {
+            ui.pasteGif(itemName)
+        },
+    })
+    menu.push({
+        label: '查看大图',
+        type: 'normal',
+        click() {
+            openImage(itemName, false, itemList)
+        },
+    })
     if (/^https?:\/\//i.test(itemName)) {
         menu.push({
             label: '添加到本地表情',
@@ -1847,21 +1912,17 @@ ipcMain.on('popupStickerItemMenu', (_, itemName: string) => {
                 download(itemName, String(new Date().getTime()), path.join(app.getPath('userData'), 'stickers'))
             },
         })
+        menu.push({
+            label: '全部添加到本地',
+            type: 'normal',
+            click() {
+                itemList?.forEach(async (item, index) => {
+                    await sleep(1000 * index)
+                    download(item, String(new Date().getTime()), path.join(app.getPath('userData'), 'stickers'))
+                })
+            },
+        })
     } else {
-        menu.push({
-            label: '以图片方式发送',
-            type: 'normal',
-            click() {
-                ui.pasteGif(itemName)
-            },
-        })
-        menu.push({
-            label: '查看大图',
-            type: 'normal',
-            click() {
-                openImage(itemName)
-            },
-        })
         menu.push({
             label: '移动到分类',
             type: 'normal',
@@ -1993,7 +2054,11 @@ ipcMain.on('popupAvatarMenu', async (e, message: Message, room: Room) => {
                             '/' +
                             message.senderId +
                             '/' +
-                            querystring.escape(room.roomName) +
+                            querystring.escape(
+                                getConfig().removeGroupNameEmotes
+                                    ? removeGroupNameEmotes(room.roomName)
+                                    : room.roomName,
+                            ) +
                             '/' +
                             querystring.escape(message.username) +
                             '/' +
@@ -2026,7 +2091,11 @@ ipcMain.on('popupAvatarMenu', async (e, message: Message, room: Room) => {
                             '/' +
                             message.senderId +
                             '/' +
-                            querystring.escape(room.roomName) +
+                            querystring.escape(
+                                getConfig().removeGroupNameEmotes
+                                    ? removeGroupNameEmotes(room.roomName)
+                                    : room.roomName,
+                            ) +
                             '/' +
                             querystring.escape(message.username),
                     )
@@ -2092,7 +2161,9 @@ ipcMain.on('popupContactMenu', (_, remark?: string, name?: string, displayId?: n
                             '/' +
                             displayId +
                             '/0/' +
-                            querystring.escape(remark) +
+                            querystring.escape(
+                                getConfig().removeGroupNameEmotes ? removeGroupNameEmotes(remark) : remark,
+                            ) +
                             '/0',
                     )
                 },
@@ -2208,7 +2279,11 @@ ipcMain.on(
                                 '/' +
                                 displayId +
                                 '/' +
-                                querystring.escape(selectedRoom.roomName) +
+                                querystring.escape(
+                                    getConfig().removeGroupNameEmotes
+                                        ? removeGroupNameEmotes(selectedRoom.roomName)
+                                        : selectedRoom.roomName,
+                                ) +
                                 '/' +
                                 querystring.escape(remark) +
                                 '/' +
@@ -2241,7 +2316,11 @@ ipcMain.on(
                                 '/' +
                                 displayId +
                                 '/' +
-                                querystring.escape(selectedRoom.roomName) +
+                                querystring.escape(
+                                    getConfig().removeGroupNameEmotes
+                                        ? removeGroupNameEmotes(selectedRoom.roomName)
+                                        : selectedRoom.roomName,
+                                ) +
                                 '/' +
                                 querystring.escape(remark),
                         )

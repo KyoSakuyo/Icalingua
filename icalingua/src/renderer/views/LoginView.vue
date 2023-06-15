@@ -30,6 +30,10 @@
                     <el-radio-button label="3">Android Watch</el-radio-button>
                     <el-radio-button label="4">MacOS</el-radio-button>
                     <el-radio-button label="5">iPad</el-radio-button>
+                    <el-radio-button label="6">FIX</el-radio-button>
+                    <el-radio-button label="7">Android 8933</el-radio-button>
+                    <el-radio-button label="8">aPad 8933</el-radio-button>
+                    <el-radio-button label="9">iPad 8933</el-radio-button>
                 </el-radio-group>
             </el-form-item>
             <el-form-item label="Status" v-if="$route.query.disableIdLogin === 'false'">
@@ -143,12 +147,14 @@ export default {
             verifyUrl: '',
             phone: '',
             sendTime: -1,
+            loginTimeout: null,
         }
     },
     async created() {
         this.ver = await ipc.getVersion()
         this.form = await ipc.getAccount()
         ipcRenderer.on('error', (_, msg) => {
+            if (this.loginTimeout) clearTimeout(this.loginTimeout)
             this.errmsg = msg
             this.disabled = false
             this.shouldSubmitSmsCode = false
@@ -165,10 +171,12 @@ export default {
                 case '(45)':
                     if (this.form.protocol === 3) break
                     if (String(msg).includes('你当前使用的QQ版本过低'))
-                        this.$alert('账号被限制使用内置的 QQ 版本登录，请等待更新或尝试测试版')
+                        this.$alert(
+                            '账号被限制使用内置的 QQ 版本登录，请等待更新，或使用 FIX 协议登录成功后再更换带 8933 的协议重试',
+                        )
                     else
                         this.$alert(
-                            '可能为非常用环境登录，请等待更新 tlv544 和数据包签名算法，或 MacOS 协议登录后删除数据目录下的 token 再更换协议重试',
+                            '可能为非常用环境登录，请等待更新数据包签名算法，或使用 FIX 协议登录成功后再更换带 8933 的协议重试',
                         )
                     break
                 default:
@@ -176,6 +184,7 @@ export default {
             }
         })
         ipcRenderer.on('smsCodeVerify', (_, data) => {
+            if (this.loginTimeout) clearTimeout(this.loginTimeout)
             const parsed = JSON.parse(data)
             console.log(parsed.url)
             this.shouldSubmitSmsCode = true
@@ -190,6 +199,11 @@ export default {
                     this.disabled = true
                     if (this.form.password && !/^([a-f\d]{32}|[A-F\d]{32})$/.test(this.form.password))
                         this.form.password = md5(this.form.password)
+                    this.loginTimeout = setTimeout(() => {
+                        this.$alert(
+                            '登录时间似乎过长了，请检查网络是否正常，如果安卓系/苹果系协议互相切换请先删除 token，若还不能登录请携带日志反馈',
+                        )
+                    }, 60 * 1000)
                     await ipcRenderer.send('createBot', this.form)
                 } else {
                     return false
@@ -211,6 +225,7 @@ export default {
             }, 1000)
         },
         QRCodeVerify() {
+            if (this.loginTimeout) clearTimeout(this.loginTimeout)
             ipcRenderer.send('QRCodeVerify', this.verifyUrl)
         },
         cannotLogin() {

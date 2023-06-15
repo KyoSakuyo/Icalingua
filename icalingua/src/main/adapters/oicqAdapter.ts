@@ -89,6 +89,7 @@ import ChatGroup from '@icalingua/types/ChatGroup'
 import SpecialFeature from '@icalingua/types/SpecialFeature'
 import { LoginErrorEventData } from 'oicq-icalingua-plus-plus'
 import { SliderEventData } from 'oicq-icalingua-plus-plus'
+import removeGroupNameEmotes from '../../utils/removeGroupNameEmotes'
 
 let bot: Client
 let storage: StorageProvider
@@ -199,10 +200,14 @@ const eventHandlers = {
         if (
             !isAppLocked() &&
             (!getMainWindow().isFocused() || !getMainWindow().isVisible() || roomId !== ui.getSelectedRoomId()) &&
-            (room.priority >= getConfig().priority || at) &&
+            (room.priority >= getConfig().priority || at === true || (at && !getConfig().disableAtAll)) &&
             !isSelfMsg &&
             !getConfig().disableNotification
         ) {
+            const notifRoomName =
+                room.roomId < 0 && getConfig().removeGroupNameEmotes
+                    ? removeGroupNameEmotes(room.roomName)
+                    : room.roomName
             // notification
             if (lastMessage.content === '[窗口抖动]') {
                 tryToShowAllWindows()
@@ -212,10 +217,10 @@ const eventHandlers = {
                 if (process.platform === 'darwin' || process.platform === 'win32') {
                     if (ElectronNotification.isSupported()) {
                         const notif = new ElectronNotification({
-                            title: room.roomName,
+                            title: notifRoomName,
                             body: (groupId ? senderName + ': ' : '') + lastMessage.content,
                             hasReply: true,
-                            replyPlaceholder: 'Reply to ' + room.roomName,
+                            replyPlaceholder: 'Reply to ' + notifRoomName,
                             icon: await avatarCache(getAvatarUrl(roomId, true)),
                             actions: [
                                 {
@@ -253,7 +258,7 @@ const eventHandlers = {
                     if (await isInlineReplySupported()) actions['inline-reply'] = '回复...'
 
                     const notifParams = {
-                        summary: room.roomName,
+                        summary: notifRoomName,
                         appName: 'Icalingua++',
                         category: 'im.received',
                         'desktop-entry': 'icalingua',
@@ -261,7 +266,7 @@ const eventHandlers = {
                         timeout: 5000,
                         body: (groupId ? senderName + ': ' : '') + lastMessage.content,
                         icon: await avatarCache(getAvatarUrl(roomId, true)),
-                        'x-kde-reply-placeholder-text': '发送到 ' + room.roomName,
+                        'x-kde-reply-placeholder-text': '发送到 ' + notifRoomName,
                         'x-kde-reply-submit-button-text': '发送',
                         actions,
                     }
@@ -785,6 +790,15 @@ const eventHandlers = {
     async requestAdd(data: FriendAddEventData | GroupAddEventData | GroupInviteEventData) {
         //console.log(data)
         ui.sendAddRequest(data)
+        let notifBody
+        if (data.request_type === 'friend') {
+            notifBody = '申请添加你为好友'
+        } else {
+            const groupName = getConfig().removeGroupNameEmotes
+                ? removeGroupNameEmotes(data.group_name)
+                : data.group_name
+            notifBody = '申请加入：' + groupName
+        }
 
         //notification
         const notif = new Notification({
@@ -794,7 +808,7 @@ const eventHandlers = {
             'desktop-entry': 'icalingua',
             urgency: 1,
             timeout: 0,
-            body: data.request_type === 'friend' ? '申请添加你为好友' : '申请加入：' + data.group_name,
+            body: notifBody,
             icon: await avatarCache(getAvatarUrl(data.user_id)),
             actions: {
                 default: '',
@@ -894,7 +908,7 @@ const loginHandlers = {
         })
         veriWin.loadURL(data.url, {
             userAgent:
-                'Mozilla/5.0 (Linux; Android 7.1.1; MIUI ONEPLUS/A5000_23_17; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/77.0.3865.120 MQQBrowser/6.2 TBS/045426 Mobile Safari/537.36 V1_AND_SQ_8.3.9_0_TIM_D QQ/3.1.1.2900 NetType/WIFI WebP/0.3.0 Pixel/720 StatusBarHeight/36 SimpleUISwitch/0 QQTheme/1015712',
+                'Mozilla/5.0 (Linux; Android 7.1.1; MIUI ONEPLUS/A5000_23_17; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/98.0.4758.102 MQQBrowser/6.2 TBS/046403 Mobile Safari/537.36 V1_AND_SQ_8.9.50_3898_YYB_D QQ/8.9.50.10650 NetType/WIFI WebP/0.3.0 AppId/537155599 Pixel/720 StatusBarHeight/36 SimpleUISwitch/0 QQTheme/1000 StudyMode/0 CurrentMode/0 CurrentFontScale/1.0 GlobalDensityScale/1.0285714 AllowLandscape/false InMagicWin/0',
         })
     },
     onErr(data: LoginErrorEventData) {
@@ -1266,7 +1280,7 @@ const adapter: OicqAdapter = {
         }
         if (!room) room = await storage.getRoom(roomId)
         if (!roomId) roomId = room.roomId
-        if (file && typeof file.type === 'string' && !file.type.includes('image')) {
+        if (file && typeof file.type === 'string' && !file.type.includes('image') && !file.type.startsWith('audio')) {
             //群文件
             if (roomId > 0) {
                 bot.sendFile(roomId, file.path, undefined, ui.uploadProgress).then(async (data) => {
@@ -1478,14 +1492,23 @@ const adapter: OicqAdapter = {
             }
         }
         if (b64img) {
-            chain.push({
-                type: 'image',
-                data: {
-                    file: 'base64://' + b64img.replace(/^data:.+;base64,/, ''),
-                    type: sticker ? 'face' : 'image',
-                    url: imgpath && imgpath.startsWith('send_') ? imgpath.replace('send_', '') : b64img,
-                },
-            })
+            if (file && file.type.startsWith('audio')) {
+                chain.push({
+                    type: 'record',
+                    data: {
+                        file: Buffer.from(b64img.replace(/^data:.+;base64,/, ''), 'base64'),
+                    },
+                })
+            } else {
+                chain.push({
+                    type: 'image',
+                    data: {
+                        file: 'base64://' + b64img.replace(/^data:.+;base64,/, ''),
+                        type: sticker ? 'face' : 'image',
+                        url: imgpath && imgpath.startsWith('send_') ? imgpath.replace('send_', '') : b64img,
+                    },
+                })
+            }
         } else if (imgpath) {
             chain.push({
                 type: 'image',
@@ -1510,7 +1533,7 @@ const adapter: OicqAdapter = {
             if (idReg && idReg.length >= 3 && content === idReg[0]) {
                 const qlottie = idReg[1]
                 const faceId = idReg[2]
-                chain.length = 0
+                chain.length = chain[0].type === 'anonymous' ? 1 : 0
                 chain.push({
                     type: 'face',
                     data: {
@@ -1559,7 +1582,7 @@ const adapter: OicqAdapter = {
                 data_dir: path.join(app.getPath('userData'), '/data'),
                 ignore_self: false,
                 brief: true,
-                log_level: process.env.NODE_ENV === 'development' ? 'mark' : 'warn',
+                log_level: process.env.NODE_ENV === 'development' ? 'warn' : 'error',
             })
             _sendPrivateMsg = bot.sendPrivateMsg
             bot.sendPrivateMsg = async (user_id: number, message: MessageElem[] | string, auto_escape?: boolean) => {
@@ -1705,18 +1728,35 @@ const adapter: OicqAdapter = {
         const messages = []
         for (let i = 0; i < history.data.length; i++) {
             const data = history.data[i]
-            const message: Message = {
-                senderId: data.user_id,
-                username: data.nickname,
-                content: '',
-                timestamp: formatDate('hh:mm:ss', new Date(data.time * 1000)),
-                date: formatDate('yyyy/MM/dd', new Date(data.time * 1000)),
-                _id: String(data.group_id || -1) + '|' + data.seq,
-                time: data.time * 1000,
-                files: [],
-                bubble_id: data.bubble_id,
+            data.time = Number(data.time)
+            let message: Message
+            try {
+                message = {
+                    senderId: data.user_id,
+                    username: data.nickname,
+                    content: '',
+                    timestamp: formatDate('hh:mm:ss', new Date(data.time * 1000)),
+                    date: formatDate('yyyy/MM/dd', new Date(data.time * 1000)),
+                    _id: String(data.group_id || -1) + '|' + data.seq,
+                    time: data.time * 1000,
+                    files: [],
+                    bubble_id: data.bubble_id,
+                }
+                await processMessage(data.message, message, {}, ui.getSelectedRoomId())
+            } catch (e) {
+                message = {
+                    senderId: 0,
+                    username: '错误',
+                    content: JSON.stringify(data),
+                    code: JSON.stringify(e),
+                    timestamp: formatDate('hh:mm:ss'),
+                    date: formatDate('yyyy/MM/dd'),
+                    _id: Date.now(),
+                    time: Date.now(),
+                    files: [],
+                }
+                errorHandler(e)
             }
-            await processMessage(data.message, message, {}, ui.getSelectedRoomId())
             messages.push(message)
         }
         return messages
@@ -1958,24 +1998,24 @@ const adapter: OicqAdapter = {
         }
         const { messages, done } = await fetchLoop(60)
         await storage.addMessages(roomId, messages)
+        let room = await storage.getRoom(roomId)
         if (roomId === ui.getSelectedRoomId())
             storage.fetchMessages(roomId, 0, currentLoadedMessagesCount + 20).then(ui.setMessages)
         if (done) {
-            ui.messageSuccess(`${roomId} 已拉取 ${messages.length} 条消息`)
+            ui.messageSuccess(`${room.roomName}(${Math.abs(roomId)}) 已拉取 ${messages.length} 条消息`)
             ui.clearHistoryCount()
         } else {
-            ui.message(`${roomId} 已拉取 ${messages.length} 条消息，正在后台继续拉取`)
+            ui.message(`${room.roomName}(${Math.abs(roomId)}) 已拉取 ${messages.length} 条消息，正在后台继续拉取`)
             {
                 const { messages } = await fetchLoop()
                 await storage.addMessages(roomId, messages)
-                ui.messageSuccess(`${roomId} 已拉取 ${messages.length} 条消息`)
+                ui.messageSuccess(`${room.roomName}(${Math.abs(roomId)}) 已拉取 ${messages.length} 条消息`)
                 ui.clearHistoryCount()
             }
         }
 
         // 更新最近消息
         if (!messages.length) return
-        let room = await storage.getRoom(roomId)
         if (room.utime > lastMessageTime) return
         room.lastMessage = lastMessage
         room.utime = lastMessageTime

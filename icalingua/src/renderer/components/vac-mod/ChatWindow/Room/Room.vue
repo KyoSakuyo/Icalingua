@@ -18,6 +18,7 @@
             :room="room"
             :members-count="membersCount"
             :showSinglePanel="showSinglePanel"
+            :removeEmotes="removeHeaderEmotes"
             @toggle-rooms-list="$emit('toggle-rooms-list')"
             @menu-action-handler="$emit('menu-action-handler', $event)"
             @pokefriend="$emit('pokefriend')"
@@ -420,7 +421,7 @@ import getStaticPath from '../../../../../utils/getStaticPath'
 
 import ipc from '../../../../utils/ipc'
 import { detectMobile, iOSDevice } from '../../utils/mobileDetection'
-import { isImageFile, isVideoFile } from '../../utils/mediaFile'
+import { isImageFile, isVideoFile, isAudioFile } from '../../utils/mediaFile'
 
 const faceDir = path.join(getStaticPath(), 'face')
 
@@ -478,6 +479,7 @@ export default {
         lastUnreadCount: { type: Number, required: false, default: 0 },
         lastUnreadAt: { type: Boolean, required: false, default: false },
         showSinglePanel: { type: Boolean, require: true, default: false },
+        removeHeaderEmotes: { type: Boolean, required: false, default: false },
     },
     data() {
         return {
@@ -718,7 +720,10 @@ export default {
                 const lastMessage = ownMessages[ownMessages.length - 1]
                 if (lastMessage.file && lastMessage.file.type.startsWith('image')) {
                     this.onPasteGif(lastMessage.file.url)
-                } else {
+                } else if (lastMessage.file && lastMessage.file.type.startsWith('audio')) {
+                    return
+                } else if (lastMessage.file) {
+                    return
                     this.file = lastMessage.file
                 }
                 this.messageReply = lastMessage.replyMessage
@@ -1320,7 +1325,7 @@ export default {
             this.resetMediaFile()
 
             const file = files[0]
-            const fileURL = URL.createObjectURL(file)
+            const fileURL = file.path ? file.path : URL.createObjectURL(file)
             const blobFile = await fetch(fileURL).then((res) => res.blob())
             const typeIndex = file.name.lastIndexOf('.')
 
@@ -1337,6 +1342,9 @@ export default {
             if (isImageFile(this.file)) {
                 this.imageFile = fileURL
             } else if (isVideoFile(this.file)) {
+                this.videoFile = fileURL
+                setTimeout(() => this.onMediaLoad(), 50)
+            } else if (isAudioFile(this.file)) {
                 this.videoFile = fileURL
                 setTimeout(() => this.onMediaLoad(), 50)
             } else {

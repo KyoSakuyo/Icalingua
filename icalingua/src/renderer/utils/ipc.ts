@@ -124,8 +124,8 @@ const ipc = {
     popupStickerMenu() {
         ipcRenderer.send('popupStickerMenu')
     },
-    popupStickerItemMenu(itemName: string) {
-        ipcRenderer.send('popupStickerItemMenu', itemName)
+    popupStickerItemMenu(itemName: string, itemList?: Array<string>, pathName?: string) {
+        ipcRenderer.send('popupStickerItemMenu', itemName, itemList, pathName)
     },
     popupStickerDirMenu(dirName: string) {
         ipcRenderer.send('popupStickerDirMenu', dirName)
@@ -225,6 +225,9 @@ const ipc = {
     },
     setLockPassword(password: string) {
         ipcRenderer.send('setLockPassword', password)
+    },
+    requestOnlineData() {
+        ipcRenderer.send('requestOnlineData')
     },
 }
 export default ipc

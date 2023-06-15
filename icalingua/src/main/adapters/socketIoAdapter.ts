@@ -40,10 +40,11 @@ import {
 } from '../utils/windowManager'
 import ChatGroup from '@icalingua/types/ChatGroup'
 import SpecialFeature from '@icalingua/types/SpecialFeature'
+import removeGroupNameEmotes from '../../utils/removeGroupNameEmotes'
 
 // 这是所对应服务端协议的版本号，如果协议有变动比如说调整了 API 才会更改。
 // 如果只是功能上的变动的话就不会改这个版本号，混用协议版本相同的服务端完全没有问题
-const EXCEPTED_PROTOCOL_VERSION = '2.9.3'
+const EXCEPTED_PROTOCOL_VERSION = '2.9.13'
 
 let socket: Socket
 let uin = 0
@@ -162,7 +163,7 @@ const attachSocketEvents = () => {
                 (!getMainWindow().isFocused() ||
                     !getMainWindow().isVisible() ||
                     data.roomId !== ui.getSelectedRoomId()) &&
-                (data.priority >= getConfig().priority || data.at) &&
+                (data.priority >= getConfig().priority || data.at === true || (data.at && !getConfig().disableAtAll)) &&
                 !data.isSelfMsg &&
                 !getConfig().disableNotification
             ) {
@@ -171,10 +172,14 @@ const attachSocketEvents = () => {
                     ui.chroom(data.roomId)
                 }
                 // notification
+                const notifRoomName =
+                    data.roomId < 0 && getConfig().removeGroupNameEmotes
+                        ? removeGroupNameEmotes(data.data.title)
+                        : data.data.title
                 if (process.platform === 'darwin' || process.platform === 'win32') {
                     if (!ElectronNotification.isSupported()) return
                     const notif = new ElectronNotification({
-                        title: data.data.title,
+                        title: notifRoomName,
                         body: data.data.body,
                         hasReply: data.data.hasReply,
                         replyPlaceholder: data.data.replyPlaceholder,
@@ -215,14 +220,14 @@ const attachSocketEvents = () => {
 
                     const notifParams = {
                         ...data.data,
-                        summary: data.data.title,
+                        summary: notifRoomName,
                         appName: 'Icalingua++',
                         category: 'im.received',
                         'desktop-entry': 'icalingua',
                         urgency: 1,
                         timeout: 5000,
                         icon: await avatarCache(getAvatarUrl(data.roomId, true)),
-                        'x-kde-reply-placeholder-text': '发送到 ' + data.data.title,
+                        'x-kde-reply-placeholder-text': '发送到 ' + notifRoomName,
                         'x-kde-reply-submit-button-text': '发送',
                         actions,
                     }
@@ -312,7 +317,7 @@ const attachSocketEvents = () => {
         })
         veriWin.loadURL(url, {
             userAgent:
-                'Mozilla/5.0 (Linux; Android 7.1.1; MIUI ONEPLUS/A5000_23_17; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/77.0.3865.120 MQQBrowser/6.2 TBS/045426 Mobile Safari/537.36 V1_AND_SQ_8.3.9_0_TIM_D QQ/3.1.1.2900 NetType/WIFI WebP/0.3.0 Pixel/720 StatusBarHeight/36 SimpleUISwitch/0 QQTheme/1015712',
+                'Mozilla/5.0 (Linux; Android 7.1.1; MIUI ONEPLUS/A5000_23_17; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/98.0.4758.102 MQQBrowser/6.2 TBS/046403 Mobile Safari/537.36 V1_AND_SQ_8.9.50_3898_YYB_D QQ/8.9.50.10650 NetType/WIFI WebP/0.3.0 AppId/537155599 Pixel/720 StatusBarHeight/36 SimpleUISwitch/0 QQTheme/1000 StudyMode/0 CurrentMode/0 CurrentFontScale/1.0 GlobalDensityScale/1.0285714 AllowLandscape/false InMagicWin/0',
         })
     })
 }
@@ -431,7 +436,7 @@ const adapter: Adapter = {
                 transports: ['websocket'],
             })
             socket.once('connect_error', async (e) => {
-                console.log(e)
+                errorHandler(e, true)
                 await dialog.showMessageBox(getMainWindow(), {
                     title: '错误',
                     message: e && e.message ? e.message : '连接失败',
@@ -568,13 +573,37 @@ const adapter: Adapter = {
             data.b64img = 'data:' + type.mime + ';base64,' + fileContent.toString('base64')
             data.imgpath = null
         }
+        if (data.file && data.file.type.startsWith('audio/')) {
+            socket.emit('requestToken', (token: string) =>
+                axios
+                    .post(getConfig().server + `/api/${token}/sendMessage`, data, {
+                        proxy: false,
+                    })
+                    .catch((e) => {
+                        errorHandler(e, true)
+                        if (e.response.status === 413) {
+                            ui.messageError('语音过大，无法发送')
+                        } else {
+                            ui.messageError('语音上传失败，请检查日志')
+                        }
+                    }),
+            )
+            return
+        }
         data.b64img
             ? socket.emit('requestToken', (token: string) =>
                   axios
                       .post(getConfig().server + `/api/${token}/sendMessage`, data, {
                           proxy: false,
                       })
-                      .catch(console.log),
+                      .catch((e) => {
+                          errorHandler(e, true)
+                          if (e.response.status === 413) {
+                              ui.messageError('图片过大，无法发送')
+                          } else {
+                              ui.messageError('图片上传失败，请检查日志')
+                          }
+                      }),
               )
             : socket.emit('sendMessage', data)
     },

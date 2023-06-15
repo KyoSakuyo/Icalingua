@@ -41,6 +41,8 @@ type AllConfig = {
     disableNotification: boolean
     lockPassword: string
     useSinglePanel: boolean
+    disableAtAll: boolean
+    removeGroupNameEmotes: boolean
 }
 
 export default AllConfig

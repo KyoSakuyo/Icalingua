@@ -36,7 +36,7 @@
                         @click="
                             $message({
                                 type: 'info',
-                                message: 'Coming soon... 目前中键删除对应分组，右键增加/删除当前聊天到分组',
+                                message: '懒得写了（目前中键删除对应分组，右键增加/删除当前聊天到分组',
                             })
                         "
                     />
@@ -62,6 +62,7 @@
                     :allRooms="rooms"
                     :disableChatGroups="disableChatGroups"
                     :roomPanelAvatarOnly="roomPanelAvatarOnly"
+                    :removeGroupNameEmotes="removeGroupNameEmotes"
                     @chroom="chroom"
                     @show-contacts="contactsShown = true"
                     @update-sorted-rooms="(sortedRooms) => (this.sortedRooms = sortedRooms)"
@@ -107,6 +108,7 @@
                     :last-unread-count="lastUnreadCount"
                     :last-unread-at="lastUnreadAt"
                     :showSinglePanel="showSinglePanel"
+                    :removeHeaderEmotes="selectedRoom.roomId < 0 && removeGroupNameEmotes"
                     @clear-last-unread-count="clearLastUnreadCount"
                     @clear-last-unread-at="clearLastUnreadAt"
                     @send-message="sendMessage"
@@ -178,10 +180,10 @@
             </span>
         </el-dialog>
         <el-dialog title="联系人" :visible.sync="contactsShown" top="5vh" class="dialog">
-            <TheContactsPanel @dblclick="startChat" />
+            <TheContactsPanel @dblclick="startChat" :removeGroupNameEmotes="removeGroupNameEmotes" />
         </el-dialog>
         <el-dialog title="转发到..." :visible.sync="forwardShown" top="5vh" class="dialog">
-            <TheContactsPanel @click="sendForward" />
+            <TheContactsPanel @click="sendForward" :removeGroupNameEmotes="removeGroupNameEmotes" />
         </el-dialog>
         <el-dialog title="群成员" :visible.sync="groupmemberShown" top="5vh" class="dialog">
             <TheGroupMemberPanel
@@ -210,6 +212,7 @@ import ProgressBar from '../components/ProgressBar.vue'
 import ipc from '../utils/ipc'
 import getAvatarUrl from '../../utils/getAvatarUrl'
 import createRoom from '../../utils/createRoom'
+import removeGroupNameEmotes from '../../utils/removeGroupNameEmotes'
 import fs from 'fs'
 import * as themes from '../utils/themes'
 
@@ -267,6 +270,7 @@ export default {
             disableChatGroupsRedPoint: false,
             useSinglePanel: false,
             showSinglePanel: false,
+            removeGroupNameEmotes: false,
             showPanel: 'contact', // 'chat' or 'contact', 只有showSinglePanel为true有效
             notifyProgresses: new Map(),
         }
@@ -282,6 +286,7 @@ export default {
         this.roomPanelAvatarOnly = roomPanelLastSetting.roomPanelAvatarOnly
         this.roomPanelWidth = roomPanelLastSetting.roomPanelWidth
         this.useSinglePanel = (await ipc.getSettings()).useSinglePanel
+        this.removeGroupNameEmotes = (await ipc.getSettings()).removeGroupNameEmotes
         //endregion
         //region listener
         document.addEventListener('dragover', (e) => {
@@ -548,6 +553,11 @@ export default {
         })
         ipcRenderer.on('addMessage', (_, {roomId, message}) => {
             if (roomId !== this.selectedRoomId) return
+            const index = this.messages.findIndex((e) => e._id === message._id)
+            if (index !== -1) {
+                console.warning(`[WARN] Duplicated message ID ${message._id}`, message, this.messages[index])
+                return
+            }
             this.messages = [...this.messages, message]
             if (this.lastUnreadCount >= 10 && !message.system) this.lastUnreadCount++
             if (message.at) this.lastUnreadAt = true
@@ -636,6 +646,12 @@ Chromium ${process.versions.chrome}` : ''
             this.useSinglePanel = b
             this.handleResize({ target: { innerWidth: window.innerWidth } })
         })
+        ipcRenderer.on('setRemoveGroupNameEmotes', (_, b) => {
+            this.removeGroupNameEmotes = b
+        })
+
+        ipc.setSelectedRoom(0, '')
+        ipc.requestOnlineData()
 
         window.addEventListener("resize", this.handleResize)
         this.handleResize({ target: { innerWidth: window.innerWidth } })
@@ -652,6 +668,9 @@ Chromium ${process.versions.chrome}` : ''
             if (!roomId) roomId = room.roomId
             if (file) {
                 if (file.type.includes('image')) {
+                    if (file.size >= 10485760) {
+                        this.$message.warning('图片较大，发送可能失败，软件可能卡死')
+                    }
                     const crypto = require('crypto')
                     const buffer = Buffer.from(await file.blob.arrayBuffer())
                     const imgHashStr = crypto.createHash('md5').update(buffer).digest('hex').toUpperCase()
@@ -659,8 +678,18 @@ Chromium ${process.versions.chrome}` : ''
                     b64img = `data:${file.type};base64,${b64}`
                     imgpath = imgpath || `send_https://gchat.qpic.cn/gchatpic_new/0/0-0-${imgHashStr}/0`
                     file = null
-                }
-                else
+                } else if (file.type.startsWith('audio')) {
+                    if (file.size >= 10485760) {
+                        this.$message.warning('语音较大，发送可能失败，软件可能卡死')
+                    }
+                    const buffer = Buffer.from(await file.blob.arrayBuffer())
+                    b64img = `data:audio;base64,${buffer.toString('base64')}`
+                    file = {
+                        type: file.type,
+                        size: file.size,
+                        path: file.path.substring(file.path.split('\\').join('/').lastIndexOf('/') + 1),
+                    }
+                } else
                     file = {
                         type: file.type,
                         size: file.size,
@@ -685,11 +714,16 @@ Chromium ${process.versions.chrome}` : ''
                 this.messages = []
             }
             const _roomId = this.selectedRoom.roomId
-            const msgs2add = await ipc.fetchMessage(_roomId, this.messages.length)
+            const messagesLength = this.messages.length
+            const msgs2add = await ipc.fetchMessage(_roomId, messagesLength)
             if (number) {
                 while (msgs2add.filter((e) => !e.system).length < number) {
-                    const msgs = await ipc.fetchMessage(_roomId, this.messages.length + msgs2add.length)
+                    const msgs = await ipc.fetchMessage(_roomId, messagesLength + msgs2add.length)
                     msgs2add.unshift(...msgs)
+                    if (!msgs.length) {
+                        this.$message.error('Message not found')
+                        break
+                    }
                 }
             }
             setTimeout(() => {
@@ -739,11 +773,12 @@ Chromium ${process.versions.chrome}` : ''
                 this.panel = ''
             }
         },
-        sendLottie(lottie) {
+        async sendLottie(lottie) {
+            const messageType = await ipc.getMessgeTypeSetting()
             this.sendMessage({
                 content: `[QLottie: ${lottie.qlottie},${lottie.id}]`,
                 room: this.selectedRoom,
-                messageType: 'text',
+                messageType: messageType === 'anonymous' ? 'anonymous' : 'text',
             })
             if (window.innerWidth < 1200) {
                 this.panel = ''
@@ -895,12 +930,15 @@ Chromium ${process.versions.chrome}` : ''
                 .findIndex(({ name }) => name === groupName)
             const chatGroup = this.chatGroups[index]
 
+            const roomName = this.selectedRoomId < 0 && this.removeGroupNameEmotes
+                ? removeGroupNameEmotes(this.selectedRoom.roomName)
+                : this.selectedRoom.roomName
             // 移除 room
             if (chatGroup.rooms.includes(this.selectedRoomId)) {
                 chatGroup.rooms = chatGroup.rooms.filter(e => e !== this.selectedRoomId)
                 this.$message({
                     type: 'success',
-                    message: `已将 ${this.selectedRoom.roomName} 移出分组 ${groupName}`,
+                    message: `已将 ${roomName} 移出分组 ${groupName}`,
                 })
             }
             // 添加 room
@@ -908,7 +946,7 @@ Chromium ${process.versions.chrome}` : ''
                 chatGroup.rooms.push(this.selectedRoomId)
                 this.$message({
                     type: 'success',
-                    message: `已将 ${this.selectedRoom.roomName} 加入分组 ${groupName}`,
+                    message: `已将 ${roomName} 加入分组 ${groupName}`,
                 })
             }
 

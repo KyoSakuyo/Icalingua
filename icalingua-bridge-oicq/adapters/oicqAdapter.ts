@@ -1059,7 +1059,7 @@ const adapter = {
         }
         if (!room) room = await storage.getRoom(roomId)
         if (!roomId) roomId = room.roomId
-        if (file && ((file.type && !file.type.includes('image')) || !file.type)) {
+        if (file && ((file.type && !file.type.includes('image') && !file.type.startsWith('audio')) || !file.type)) {
             // //群文件
             // if (roomId > 0) {
             //     clients.messageError('暂时无法向好友发送文件')
@@ -1237,14 +1237,23 @@ const adapter = {
             }
         }
         if (b64img) {
-            chain.push({
-                type: 'image',
-                data: {
-                    file: 'base64://' + b64img.replace(/^data:.+;base64,/, ''),
-                    type: sticker ? 'face' : 'image',
-                    url: imgpath && imgpath.startsWith('send_') ? imgpath.replace('send_', '') : b64img,
-                },
-            })
+            if (file && file.type.startsWith('audio')) {
+                chain.push({
+                    type: 'record',
+                    data: {
+                        file: Buffer.from(b64img.replace(/^data:.+;base64,/, ''), 'base64'),
+                    },
+                })
+            } else {
+                chain.push({
+                    type: 'image',
+                    data: {
+                        file: 'base64://' + b64img.replace(/^data:.+;base64,/, ''),
+                        type: sticker ? 'face' : 'image',
+                        url: imgpath && imgpath.startsWith('send_') ? imgpath.replace('send_', '') : b64img,
+                    },
+                })
+            }
         } else if (imgpath) {
             chain.push({
                 type: 'image',
@@ -1269,7 +1278,7 @@ const adapter = {
             if (idReg && idReg.length >= 3 && content === idReg[0]) {
                 const qlottie = idReg[1]
                 const faceId = idReg[2]
-                chain.length = 0
+                chain.length = chain[0].type === 'anonymous' ? 1 : 0
                 chain.push({
                     type: 'face',
                     data: {
@@ -1463,18 +1472,35 @@ const adapter = {
         const messages = []
         for (let i = 0; i < history.data.length; i++) {
             const data = history.data[i]
-            const message: Message = {
-                senderId: data.user_id,
-                username: data.nickname,
-                content: '',
-                timestamp: formatDate('hh:mm:ss', new Date(data.time * 1000)),
-                date: formatDate('yyyy/MM/dd', new Date(data.time * 1000)),
-                _id: String(data.group_id || -1) + '|' + data.seq,
-                time: data.time * 1000,
-                files: [],
-                bubble_id: data.bubble_id,
+            data.time = Number(data.time)
+            let message: Message
+            try {
+                message = {
+                    senderId: data.user_id,
+                    username: data.nickname,
+                    content: '',
+                    timestamp: formatDate('hh:mm:ss', new Date(data.time * 1000)),
+                    date: formatDate('yyyy/MM/dd', new Date(data.time * 1000)),
+                    _id: String(data.group_id || -1) + '|' + data.seq,
+                    time: data.time * 1000,
+                    files: [],
+                    bubble_id: data.bubble_id,
+                }
+                await processMessage(data.message, message, {})
+            } catch (e) {
+                message = {
+                    senderId: 0,
+                    username: '错误',
+                    content: JSON.stringify(data),
+                    code: JSON.stringify(e),
+                    timestamp: formatDate('hh:mm:ss'),
+                    date: formatDate('yyyy/MM/dd'),
+                    _id: Date.now(),
+                    time: Date.now(),
+                    files: [],
+                }
+                console.error(e)
             }
-            await processMessage(data.message, message, {})
             messages.push(message)
         }
         resolve(messages)
@@ -1670,7 +1696,8 @@ const adapter = {
             }
         }
         console.log(`${roomId} 已拉取 ${messages.length} 条消息`)
-        clients.messageSuccess(`${roomId} 已拉取 ${messages.length} 条消息`)
+        let room = await storage.getRoom(roomId)
+        clients.messageSuccess(`${room.roomName}(${Math.abs(roomId)}) 已拉取 ${messages.length} 条消息`)
         await storage.addMessages(roomId, messages)
         storage
             .fetchMessages(roomId, 0, currentLoadedMessagesCount + 20)
