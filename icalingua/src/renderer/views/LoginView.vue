@@ -24,7 +24,7 @@
                 <el-input type="password" placeholder="Password" v-model="form.password" />
             </el-form-item>
             <el-form-item prop="signAPIAddress" v-if="$route.query.disableIdLogin === 'false'">
-                <el-input type="text" placeholder="Head Sign API Address" v-model.number="form.signAPIAddress" />
+                <el-input type="text" placeholder="Head Sign API Address" v-model="form.signAPIAddress" />
             </el-form-item>
             <el-form-item prop="protocol" label="Protocol" v-if="$route.query.disableIdLogin === 'false'">
                 <el-radio-group v-model="form.protocol" size="small">
@@ -158,8 +158,9 @@ export default {
     },
     async created() {
         this.ver = await ipc.getVersion()
-        this.form = await ipc.getAccount()
-        if (!this.form.signAPIAddress) this.form.signAPIAddress = ''
+        const _form = await ipc.getAccount()
+        if (!_form.signAPIAddress) _form.signAPIAddress = ''
+        this.form = _form
         ipcRenderer.on('error', (_, msg) => {
             if (this.loginTimeout) clearTimeout(this.loginTimeout)
             this.errmsg = msg
