@@ -38,6 +38,8 @@
                     <el-radio-button label="8">aPad 8933</el-radio-button>
                     <el-radio-button label="9">iPad 8933</el-radio-button>
                     <el-radio-button label="10">TIM 3.5.1</el-radio-button>
+                    <el-radio-button label="11">Android 8958</el-radio-button>
+                    <el-radio-button label="12">aPad 8958</el-radio-button>
                 </el-radio-group>
             </el-form-item>
             <el-form-item label="Status" v-if="$route.query.disableIdLogin === 'false'">
@@ -204,7 +206,7 @@ export default {
                     this.disabled = true
                     if (this.form.password && !/^([a-f\d]{32}|[A-F\d]{32})$/.test(this.form.password))
                         this.form.password = md5(this.form.password)
-                    if (!form.signAPIAddress) {
+                    if (!this.form.signAPIAddress) {
                         this.$message.warning('未配置签名 API，可能禁止登录或无法发送消息')
                     }
                     this.loginTimeout = setTimeout(() => {
