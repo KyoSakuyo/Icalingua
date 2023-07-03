@@ -25,6 +25,28 @@ Icalingua 这个名字是日语中「光」和拉丁语中「语言」的组合�
 [![GitHub package.json dependency version (prod)](https://img.shields.io/github/package-json/dependency-version/Icalingua-plus-plus/Icalingua-plus-plus/oicq-icalingua-plus-plus/develop?filename=icalingua%2Fpackage.json)](https://github.com/takayama-lily/oicq)
 [![GitHub package.json dependency version (dev dep on branch)](https://img.shields.io/github/package-json/dependency-version/Icalingua-plus-plus/Icalingua-plus-plus/dev/electron/develop?logo=electron&filename=icalingua%2Fpackage.json)](https://electronjs.org)
 
+### 头部签名 API
+
+可用于解决无法登录/无法发送消息的问题
+
+**不要随意使用无法信任的 API**，因为这可能导致**消息内容的泄露**
+
+**⚠警告: 截至 2023/06/30，高版本（8.9.58/8.9.63）登录后一小时左右冻结的问题暂未完美解决**
+
+**除非版本过低，否则尽量使用较低版本协议**
+
+#### 自行部署 API
+
+相关项目: https://github.com/fuqiuluo/unidbg-fetch-qsign
+
+对于该 API 与 Icalingua++ 兼容性的注意事项可查看 TG 群组置顶消息
+
+#### 公共 API
+
+**⚠警告: 公共 API 使用的设备信息是一样的，存在批量绑定账号并冻结的可能性**
+
+可使用适配 Icalingua++/ICQQ 的公共 API，在 TG 群组中有提供支持 QQ8.9.50 / QQ8.9.58 / TIM3.5.1 的 API
+
 ### 常用启动参数
 
 - 禁用硬件加速: `--dha`
