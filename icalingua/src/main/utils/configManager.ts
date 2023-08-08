@@ -41,6 +41,7 @@ const emptyLoginForm: LoginForm = {
 }
 const defaultAria2Config: Aria2Config = {
     enabled: false,
+    slient: false,
     host: '127.0.0.1',
     port: 6800,
     secure: false,
@@ -96,6 +97,8 @@ const defaultConfig: AllConfig = {
     useSinglePanel: false,
     disableAtAll: false,
     removeGroupNameEmotes: false,
+    usePanguJsSend: false,
+    usePanguJsRecv: false,
 }
 if (!fs.existsSync(configFilePath) && fs.existsSync(oldConfigFilePath)) {
     migrateData()
@@ -108,6 +111,22 @@ if (fs.existsSync(configFilePath)) {
             config[i] = defaultConfig[i]
         }
     }
+    for (const i in emptyLoginForm) {
+        if (!(i in config['account'])) {
+            config['account'][i] = emptyLoginForm[i]
+        }
+    }
+    for (const i in defaultAria2Config) {
+        if (!(i in config['aria2'])) {
+            config['aria2'][i] = defaultAria2Config[i]
+        }
+    }
+    for (const i in defaultWinSize) {
+        if (!(i in config['winSize'])) {
+            config['winSize'][i] = defaultWinSize[i]
+        }
+    }
+
     if (typeof config.darkTaskIcon === 'boolean') config.darkTaskIcon = config.darkTaskIcon ? 'true' : 'false'
     saveConfigFile()
 } else {

@@ -29,11 +29,12 @@
                 :selected="room.roomId === selected.roomId"
                 :priority="priority"
                 :removeEmotes="room.roomId < 0 && removeGroupNameEmotes"
+                :usePanguJs="usePanguJs"
                 @click="
                     input = ''
                     $emit('chroom', room)
                 "
-                @contextmenu="roomMenu(room)"
+                @contextmenu="roomMenu(room, $event)"
             />
         </div>
     </div>
@@ -70,6 +71,7 @@ export default {
         disableChatGroups: Boolean,
         roomPanelAvatarOnly: Boolean,
         removeGroupNameEmotes: Boolean,
+        usePanguJs: Boolean,
     },
     data() {
         return {
@@ -78,8 +80,8 @@ export default {
         }
     },
     methods: {
-        roomMenu(room) {
-            ipc.popupRoomMenu(room.roomId)
+        roomMenu(room, e) {
+            ipc.popupRoomMenu(room.roomId, e)
         },
         async clearRooms() {
             console.log(this.allRooms)

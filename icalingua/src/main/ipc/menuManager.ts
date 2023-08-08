@@ -53,12 +53,14 @@ import {
     sendPacket,
     sendGroupSign,
     getDisabledFeatures,
+    sendGroupPoke,
 } from './botAndStorage'
 import { download, downloadFileByMessageData, downloadImage } from './downloadManager'
 import openImage from './openImage'
 import { updateTrayIcon, updateTrayMenu } from '../utils/trayManager'
 import removeGroupNameEmotes from '../../utils/removeGroupNameEmotes'
 import sleep from '../../utils/sleep'
+import { spacingSendMessage } from '../../utils/panguSpacing'
 
 const requireFunc = eval('require')
 const pb = requireFunc(path.join(getStaticPath(), 'pb.js'))
@@ -103,7 +105,13 @@ const setClearRoomsBehavior = (behavior: 'AllUnpined' | '1WeekAgo' | '1DayAgo' |
 const buildRoomMenu = async (room: Room): Promise<Menu> => {
     const pinTitle = room.index ? '解除置顶' : '置顶'
     const updateRoomPriority = (lev: 1 | 2 | 3 | 4 | 5) => setRoomPriority(room.roomId, lev)
+    const avatarType = room.roomId < 0 ? '群头像' : '头像'
     const menu = Menu.buildFromTemplate([
+        {
+            label: `${room.roomName} (${Math.abs(room.roomId)})`,
+            enabled: false,
+            visible: (await getSelectedRoom())?.roomId !== room.roomId,
+        },
         {
             label: '优先级',
             submenu: [
@@ -171,15 +179,20 @@ const buildRoomMenu = async (room: Room): Promise<Menu> => {
             },
         },
         {
-            label: '查看头像',
+            label: `查看${avatarType}`,
             click: () => {
                 openImage(getAvatarUrl(room.roomId).replace('&s=140', '&s=0'), false)
             },
         },
         {
-            label: '下载头像',
+            label: `下载${avatarType}`,
             click: () => {
-                downloadImage(getAvatarUrl(room.roomId).replace('&s=140', '&s=0'))
+                const cleanRoomName =
+                    room.roomId < 0 && getConfig().removeGroupNameEmotes
+                        ? removeGroupNameEmotes(room.roomName)
+                        : room.roomName
+                const basename = `${cleanRoomName}(${Math.abs(room.roomId)})的${avatarType}_${new Date().getTime()}`
+                downloadImage(getAvatarUrl(room.roomId).replace('&s=140', '&s=0'), false, basename)
             },
         },
         {
@@ -367,7 +380,7 @@ const buildRoomMenu = async (room: Room): Promise<Menu> => {
                                 : room.roomName
                             download(
                                 details.url,
-                                `${roomName}(${-room.roomId})的群相册${new Date().getTime()}.zip`,
+                                `${roomName}(${-room.roomId})的群相册_${new Date().getTime()}.zip`,
                                 undefined,
                                 true,
                             )
@@ -1086,6 +1099,29 @@ export const updateAppMenu = async () => {
                             ui.setRemoveGroupNameEmotes(menuItem.checked)
                         },
                     },
+                    {
+                        label: '查看消息时使用 Pangu.js',
+                        sublabel: '在中英文间添加空格',
+                        type: 'checkbox',
+                        checked: getConfig().usePanguJsRecv,
+                        click: (menuItem) => {
+                            getConfig().usePanguJsRecv = menuItem.checked
+                            saveConfigFile()
+                            updateAppMenu()
+                            updateTrayMenu()
+                            ui.setUsePanguJsRecv(menuItem.checked)
+                        },
+                    },
+                    {
+                        label: '发送消息时使用 Pangu.js',
+                        sublabel: '不包括 +1',
+                        type: 'checkbox',
+                        checked: getConfig().usePanguJsSend,
+                        click: (menuItem) => {
+                            getConfig().usePanguJsSend = menuItem.checked
+                            saveConfigFile()
+                        },
+                    },
                 ],
             }),
             new MenuItem({
@@ -1307,12 +1343,17 @@ export const updateAppMenu = async () => {
     }
     Menu.setApplicationMenu(menu)
 }
-ipcMain.on('popupRoomMenu', async (_, roomId: number) => {
+ipcMain.on('popupRoomMenu', async (_, roomId: number, e) => {
+    const bounds = getMainWindow().getContentBounds()
+    const pos = { x: e.x - bounds.x, y: e.y - bounds.y }
     ;(await buildRoomMenu(await getRoom(roomId))).popup({
         window: getMainWindow(),
+        ...pos,
     })
 })
-ipcMain.on('popupMessageMenu', async (_, room: Room, message: Message, sect?: string, history?: boolean) => {
+ipcMain.on('popupMessageMenu', async (_, e, room: Room, message: Message, sect?: string, history?: boolean) => {
+    const bounds = getMainWindow().getContentBounds()
+    const pos = { x: e.x - bounds.x, y: e.y - bounds.y }
     const menu = new Menu()
     if ((message.deleted || message.hide) && !message.reveal)
         menu.append(
@@ -1825,9 +1866,11 @@ ipcMain.on('popupMessageMenu', async (_, room: Room, message: Message, sect?: st
             )
         }
     }
-    menu.popup({ window: getMainWindow() })
+    menu.popup({ window: getMainWindow(), ...pos })
 })
-ipcMain.on('popupTextAreaMenu', () => {
+ipcMain.on('popupTextAreaMenu', (_, e) => {
+    const bounds = getMainWindow().getContentBounds()
+    const pos = { x: e.x - bounds.x, y: e.y - bounds.y }
     Menu.buildFromTemplate([
         {
             role: 'cut',
@@ -1838,19 +1881,27 @@ ipcMain.on('popupTextAreaMenu', () => {
         {
             role: 'paste',
         },
-    ]).popup({ window: getMainWindow() })
+        {
+            label: 'Pangu spacing',
+            click: () => {
+                ui.setMessageText(spacingSendMessage(e.text, atCache.get()))
+            },
+        },
+    ]).popup({ window: getMainWindow(), ...pos })
 })
-ipcMain.on('popupStickerMenu', () => {
+ipcMain.on('popupStickerMenu', (_, e) => {
+    const bounds = getMainWindow().getContentBounds()
+    const pos = { x: e.x - bounds.x, y: e.y - bounds.y }
     Menu.buildFromTemplate([
         {
-            label: 'Open stickers folder',
+            label: '打开 Stickers 目录',
             type: 'normal',
             click() {
                 shell.openPath(path.join(app.getPath('userData'), 'stickers'))
             },
         },
         {
-            label: 'Send rps',
+            label: '发送猜拳',
             type: 'normal',
             click() {
                 ui.sendRps()
@@ -1858,7 +1909,7 @@ ipcMain.on('popupStickerMenu', () => {
             },
         },
         {
-            label: 'Send dice',
+            label: '发送骰子',
             type: 'normal',
             click() {
                 ui.sendDice()
@@ -1866,7 +1917,7 @@ ipcMain.on('popupStickerMenu', () => {
             },
         },
         {
-            label: 'Send shake',
+            label: '发送窗口抖动',
             type: 'normal',
             click() {
                 sendMessage({
@@ -1878,14 +1929,22 @@ ipcMain.on('popupStickerMenu', () => {
             },
         },
         {
-            label: 'Close panel',
+            label: '戳自己',
+            click: () => {
+                sendGroupPoke(Math.abs(ui.getSelectedRoomId()), getUin())
+            },
+        },
+        {
+            label: '关闭面板',
             type: 'normal',
             click: ui.closePanel,
         },
-    ]).popup({ window: getMainWindow() })
+    ]).popup({ window: getMainWindow(), ...pos })
 })
-ipcMain.on('popupStickerItemMenu', (_, itemName: string, itemList?: Array<string>, pathName?: string) => {
-    if (pathName && itemList) {
+ipcMain.on('popupStickerItemMenu', (_, itemName: string, itemList: Array<string>, pathName: string, e) => {
+    const bounds = getMainWindow().getContentBounds()
+    const pos = { x: e.x - bounds.x, y: e.y - bounds.y }
+    if (pathName && itemList && itemList.length) {
         itemList = itemList.map((item) => pathName + item)
     }
     const menu: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = []
@@ -1937,9 +1996,11 @@ ipcMain.on('popupStickerItemMenu', (_, itemName: string, itemList?: Array<string
             },
         })
     }
-    Menu.buildFromTemplate(menu).popup({ window: getMainWindow() })
+    Menu.buildFromTemplate(menu).popup({ window: getMainWindow(), ...pos })
 })
-ipcMain.on('popupStickerDirMenu', (_, dirName: string) => {
+ipcMain.on('popupStickerDirMenu', (_, dirName: string, e) => {
+    const bounds = getMainWindow().getContentBounds()
+    const pos = { x: e.x - bounds.x, y: e.y - bounds.y }
     const menu: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = []
     menu.push({
         label: `删除分类 ${dirName}`,
@@ -1950,9 +2011,11 @@ ipcMain.on('popupStickerDirMenu', (_, dirName: string) => {
         },
     })
 
-    Menu.buildFromTemplate(menu).popup({ window: getMainWindow() })
+    Menu.buildFromTemplate(menu).popup({ window: getMainWindow(), ...pos })
 })
-ipcMain.on('popupAvatarMenu', async (e, message: Message, room: Room) => {
+ipcMain.on('popupAvatarMenu', async (e, message: Message, room: Room, ev) => {
+    const bounds = getMainWindow().getContentBounds()
+    const pos = { x: ev.x - bounds.x, y: ev.y - bounds.y }
     const menu = Menu.buildFromTemplate([
         {
             label: `复制 "${message.username}"`,
@@ -2008,8 +2071,11 @@ ipcMain.on('popupAvatarMenu', async (e, message: Message, room: Room) => {
     )
     menu.append(
         new MenuItem({
-            label: `下载头像`,
-            click: () => downloadImage(`https://q1.qlogo.cn/g?b=qq&nk=${message.senderId}&s=0`),
+            label: '下载头像',
+            click: () => {
+                const basename = `${message.username}(${message.senderId})的头像_${new Date().getTime()}`
+                downloadImage(`https://q1.qlogo.cn/g?b=qq&nk=${message.senderId}&s=0`, false, basename)
+            },
         }),
     )
     menu.append(
@@ -2102,9 +2168,11 @@ ipcMain.on('popupAvatarMenu', async (e, message: Message, room: Room) => {
             }),
         )
     }
-    menu.popup({ window: getMainWindow() })
+    menu.popup({ window: getMainWindow(), ...pos })
 })
-ipcMain.on('popupContactMenu', (_, remark?: string, name?: string, displayId?: number, group?: SearchableGroup) => {
+ipcMain.on('popupContactMenu', (_, e, remark?: string, name?: string, displayId?: number, group?: SearchableGroup) => {
+    const bounds = getMainWindow().getContentBounds()
+    const pos = { x: e.x - bounds.x, y: e.y - bounds.y }
     const menu = new Menu()
     if (remark) {
         menu.append(
@@ -2126,6 +2194,7 @@ ipcMain.on('popupContactMenu', (_, remark?: string, name?: string, displayId?: n
             }),
         )
     }
+    const roomId = group ? -displayId : displayId
     if (displayId) {
         menu.append(
             new MenuItem({
@@ -2135,7 +2204,38 @@ ipcMain.on('popupContactMenu', (_, remark?: string, name?: string, displayId?: n
                 },
             }),
         )
+        const avatarType = group ? '群头像' : '头像'
+        menu.append(
+            new MenuItem({
+                label: `查看${avatarType}`,
+                click: () => {
+                    openImage(getAvatarUrl(roomId).replace('&s=140', '&s=0'), false)
+                },
+            }),
+        )
+        menu.append(
+            new MenuItem({
+                label: `下载${avatarType}`,
+                click: () => {
+                    const cleanRemark =
+                        group && getConfig().removeGroupNameEmotes ? removeGroupNameEmotes(remark) : remark
+                    const basename = `${cleanRemark}(${Math.abs(displayId)})的${avatarType}_${new Date().getTime()}`
+                    downloadImage(getAvatarUrl(roomId).replace('&s=140', '&s=0'), false, basename)
+                },
+            }),
+        )
     }
+    menu.append(
+        new MenuItem({
+            label: group ? '屏蔽消息' : '屏蔽此人',
+            click: () => {
+                ui.confirmIgnoreChat({
+                    id: roomId,
+                    name: group && getConfig().removeGroupNameEmotes ? removeGroupNameEmotes(remark) : remark,
+                })
+            },
+        }),
+    )
     if (group) {
         menu.append(
             new MenuItem({
@@ -2169,7 +2269,7 @@ ipcMain.on('popupContactMenu', (_, remark?: string, name?: string, displayId?: n
             }),
         )
     }
-    menu.popup({ window: getMainWindow() })
+    menu.popup({ window: getMainWindow(), ...pos })
 })
 
 const copyImage = async (url: string) => {
@@ -2207,7 +2307,9 @@ ipcMain.on('copyImage', (_, url: string) => copyImage(url))
 
 ipcMain.on(
     'popupGroupMemberMenu',
-    async (_, remark?: string, name?: string, displayId?: number, group?: SearchableGroup) => {
+    async (_, e, remark?: string, name?: string, displayId?: number, group?: SearchableGroup) => {
+        const bounds = getMainWindow().getContentBounds()
+        const pos = { x: e.x - bounds.x, y: e.y - bounds.y }
         const menu = new Menu()
         if (remark) {
             menu.append(
@@ -2238,7 +2340,35 @@ ipcMain.on(
                     },
                 }),
             )
+            menu.append(
+                new MenuItem({
+                    label: '查看头像',
+                    click: () => {
+                        openImage(getAvatarUrl(displayId).replace('&s=140', '&s=0'), false)
+                    },
+                }),
+            )
+            menu.append(
+                new MenuItem({
+                    label: '下载头像',
+                    click: () => {
+                        const basename = `${remark}(${displayId})的头像_${new Date().getTime()}`
+                        downloadImage(getAvatarUrl(displayId).replace('&s=140', '&s=0'), false, basename)
+                    },
+                }),
+            )
         }
+        menu.append(
+            new MenuItem({
+                label: '屏蔽此人',
+                click: () => {
+                    ui.confirmIgnoreChat({
+                        id: displayId,
+                        name: remark,
+                    })
+                },
+            }),
+        )
         if (group) {
             menu.append(
                 new MenuItem({
@@ -2249,6 +2379,15 @@ ipcMain.on(
                             id: displayId,
                         })
                         ui.addMessageText('@' + remark + ' ')
+                        ui.openGroupMemberPanel(false)
+                    },
+                }),
+            )
+            menu.append(
+                new MenuItem({
+                    label: '戳一戳',
+                    click: () => {
+                        sendGroupPoke(Number(group), displayId)
                         ui.openGroupMemberPanel(false)
                     },
                 }),
@@ -2327,6 +2466,6 @@ ipcMain.on(
                 }),
             )
         }
-        menu.popup({ window: getMainWindow() })
+        menu.popup({ window: getMainWindow(), ...pos })
     },
 )

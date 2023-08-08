@@ -90,6 +90,7 @@ import SpecialFeature from '@icalingua/types/SpecialFeature'
 import { LoginErrorEventData } from 'oicq-icalingua-plus-plus'
 import { SliderEventData } from 'oicq-icalingua-plus-plus'
 import removeGroupNameEmotes from '../../utils/removeGroupNameEmotes'
+import { spacingNotification } from '../../utils/panguSpacing'
 
 let bot: Client
 let storage: StorageProvider
@@ -209,6 +210,9 @@ const eventHandlers = {
                 room.roomId < 0 && getConfig().removeGroupNameEmotes
                     ? removeGroupNameEmotes(room.roomName)
                     : room.roomName
+            const notifMessageContent = getConfig().usePanguJsRecv
+                ? spacingNotification(lastMessage.content)
+                : lastMessage.content
             // notification
             if (lastMessage.content === '[窗口抖动]') {
                 tryToShowAllWindows()
@@ -219,7 +223,7 @@ const eventHandlers = {
                     if (ElectronNotification.isSupported()) {
                         const notif = new ElectronNotification({
                             title: notifRoomName,
-                            body: (groupId ? senderName + ': ' : '') + lastMessage.content,
+                            body: (groupId ? senderName + ': ' : '') + notifMessageContent,
                             hasReply: true,
                             replyPlaceholder: 'Reply to ' + notifRoomName,
                             icon: await avatarCache(getAvatarUrl(roomId, true)),
@@ -265,7 +269,7 @@ const eventHandlers = {
                         'desktop-entry': 'icalingua',
                         urgency: 1,
                         timeout: 5000,
-                        body: (groupId ? senderName + ': ' : '') + lastMessage.content,
+                        body: (groupId ? senderName + ': ' : '') + notifMessageContent,
                         icon: await avatarCache(getAvatarUrl(roomId, true)),
                         'x-kde-reply-placeholder-text': '发送到 ' + notifRoomName,
                         'x-kde-reply-submit-button-text': '发送',
@@ -997,25 +1001,40 @@ const initStorage = async () => {
                 storage = new RedisStorageProvider(loginForm.rdsHost, `${loginForm.username}`)
                 break
             case 'sqlite':
-                storage = new SQLStorageProvider(`${loginForm.username}`, 'sqlite3', {
-                    dataPath: app.getPath('userData'),
-                })
+                storage = new SQLStorageProvider(
+                    `${loginForm.username}`,
+                    'sqlite3',
+                    {
+                        dataPath: app.getPath('userData'),
+                    },
+                    errorHandler,
+                )
                 break
             case 'mysql':
-                storage = new SQLStorageProvider(`${loginForm.username}`, 'mysql', {
-                    host: loginForm.sqlHost,
-                    user: loginForm.sqlUsername,
-                    password: loginForm.sqlPassword,
-                    database: loginForm.sqlDatabase,
-                })
+                storage = new SQLStorageProvider(
+                    `${loginForm.username}`,
+                    'mysql',
+                    {
+                        host: loginForm.sqlHost,
+                        user: loginForm.sqlUsername,
+                        password: loginForm.sqlPassword,
+                        database: loginForm.sqlDatabase,
+                    },
+                    errorHandler,
+                )
                 break
             case 'pg':
-                storage = new SQLStorageProvider(`${loginForm.username}`, 'pg', {
-                    host: loginForm.sqlHost,
-                    user: loginForm.sqlUsername,
-                    password: loginForm.sqlPassword,
-                    database: loginForm.sqlDatabase,
-                })
+                storage = new SQLStorageProvider(
+                    `${loginForm.username}`,
+                    'pg',
+                    {
+                        host: loginForm.sqlHost,
+                        user: loginForm.sqlUsername,
+                        password: loginForm.sqlPassword,
+                        database: loginForm.sqlDatabase,
+                    },
+                    errorHandler,
+                )
                 break
             default:
                 break
@@ -1772,7 +1791,7 @@ const adapter: OicqAdapter = {
         try {
             meta = bot.acquireGfs(gin).download(fid)
         } catch (e) {
-            errorHandler(e)
+            errorHandler(e, true)
             meta = {
                 name: e.message + '(' + e.code + ')',
                 url: 'error',
@@ -2025,7 +2044,7 @@ const adapter: OicqAdapter = {
     },
 
     async getRoamingStamp(no_cache?: boolean): Promise<RoamingStamp[]> {
-        const roaming_stamp = (await bot.getRoamingStamp(no_cache)).data
+        const roaming_stamp = (await bot.getRoamingStamp(no_cache)).data || []
         let stamps = []
 
         for (let index: number = roaming_stamp.length - 1; index >= 0; index--) {

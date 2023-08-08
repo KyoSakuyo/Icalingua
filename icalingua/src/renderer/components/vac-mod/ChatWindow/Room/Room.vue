@@ -110,10 +110,11 @@
                                 :linkify="linkify"
                                 :forward-res-id="forwardResId"
                                 :msgsToForward="msgsToForward"
+                                :usePanguJs="usePanguJsRecv"
                                 @open-file="openFile"
                                 @add-new-message="addNewMessage"
-                                @ctx="msgctx(m)"
-                                @avatar-ctx="avatarCtx(m)"
+                                @ctx="msgctx($event, m)"
+                                @avatar-ctx="avatarCtx(m, $event)"
                                 @download-image="$emit('download-image', $event)"
                                 @poke="$emit('pokegroup', m.senderId)"
                                 @open-forward="$emit('open-forward', $event)"
@@ -206,6 +207,7 @@
                 :message-reply="messageReply"
                 :linkify="linkify"
                 :showForwardPanel="showForwardPanel"
+                :usePanguJs="usePanguJsRecv"
                 @reset-message="resetMessage"
             >
                 <template v-for="(index, name) in $scopedSlots" #[name]="data">
@@ -481,6 +483,7 @@ export default {
         lastUnreadAt: { type: Boolean, required: false, default: false },
         showSinglePanel: { type: Boolean, require: true, default: false },
         removeHeaderEmotes: { type: Boolean, required: false, default: false },
+        usePanguJsRecv: { type: Boolean, required: false, default: false },
     },
     data() {
         return {
@@ -797,6 +800,11 @@ export default {
         })
         ipcRenderer.on('addMessageText', (_, message) => {
             this.$refs.roomTextarea.message += message
+            this.focusTextarea()
+            this.$nextTick(() => this.resizeTextarea())
+        })
+        ipcRenderer.on('setMessageText', (_, message) => {
+            this.$refs.roomTextarea.message = message
             this.focusTextarea()
             this.$nextTick(() => this.resizeTextarea())
         })
@@ -1393,12 +1401,12 @@ export default {
         textareaActionHandler() {
             this.$emit('textarea-action-handler', this.$refs.roomTextarea.message)
         },
-        msgctx(message) {
+        msgctx(e, message) {
             const sect = window.getSelection().toString()
-            ipc.popupMessageMenu(this.room, message, sect, this.$route.name === 'history-page')
+            ipc.popupMessageMenu(e, this.room, message, sect, this.$route.name === 'history-page')
         },
-        avatarCtx(message) {
-            ipc.popupAvatarMenu(message, this.room)
+        avatarCtx(message, e) {
+            ipc.popupAvatarMenu(message, this.room, e)
         },
         containerScroll(e) {
             if (this.onScrolling) {
@@ -1486,8 +1494,8 @@ export default {
             )
         },
         textctx: ipc.popupTextAreaMenu,
-        roomMenu() {
-            ipc.popupRoomMenu(this.room.roomId)
+        roomMenu(e) {
+            ipc.popupRoomMenu(this.room.roomId, e)
         },
         async updateGroupMembers() {
             const { roomId } = this.room
